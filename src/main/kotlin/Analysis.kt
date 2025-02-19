@@ -6,7 +6,7 @@ import kotlin.math.ln
 
 fun main() {
     val relu = ActivationFunction { output ->
-        Relu(output)
+        ReluFunction(output)
     }
 
     val softmax = ActivationFunction { output ->
@@ -19,13 +19,16 @@ fun main() {
         }
     }
 
-    val inputLayer = layer(28 * 28, relu)
-    val outputLayer = layer(10, softmax)
-    val hidden0 = layer(100, relu)
-    val hidden1 = layer(37, relu)
-    inputLayer.denseTo(hidden0).denseTo(hidden1).denseTo(outputLayer, true)
+    val inputLayer = layer(28 * 28, Activation.Relu)
+    val outputLayer = layer(10, Activation.Softmax)
+    val hidden0 = layer(100, Activation.Relu)
+    val hidden1 = layer(37, Activation.Relu)
+    inputLayer.denseTo(hidden0).denseTo(hidden1).denseTo(outputLayer)
+    hidden0.denseTo(outputLayer)
 
-    val neuralNetwork = NeuralNetwork(arrayListOf(inputLayer, hidden0, hidden1, outputLayer), inputLayer, outputLayer, crossEntropyLoss)
+    val neuralNetwork = NeuralNetwork(arrayListOf(inputLayer, hidden0, hidden1, outputLayer), inputLayer, outputLayer, crossEntropyLoss, 0.003)
+
+    neuralNetwork.weightInitialization()
 
     val trainingData = decodeMNISTTraining()
 
@@ -36,10 +39,11 @@ fun main() {
     })
 
     var accuracy = 0.0
+    var loss = 0.0
 
     neuralNetwork.iterate(dataset, 32, 10) { index ->
         this.forward()
-        val outputs = neuralNetwork.outputNeurons.neurons
+        val outputs = neuralNetwork.outputLayer.postActivation
         var predicted = 0
         for (outputIndex in outputs.indices) {
             if (outputs[outputIndex] > outputs[predicted]) {
@@ -53,11 +57,15 @@ fun main() {
         } else {
             0.0
         }
+
+        loss += neuralNetwork.currentLoss
+
         if (index % 100 == 0) {
             println("data " + this.currentDataIndex + " epoch " + this.currentEpoch)
-            println("loss: " + neuralNetwork.currentLoss)
+            println("loss: " + loss / 100)
             println("accuracy: " + accuracy / 100)
             accuracy = 0.0
+            loss = 0.0
 //                printLayerData(hidden0, "hidden 0")
 //                printLayerData(hidden1, "hidden 1")
 //                printLayerData(outputLayer, "output layer")
@@ -115,7 +123,7 @@ fun softMaxOtherDerivative(thisParam: VariableList, otherParamIndex: Int): Funct
     }
 }
 
-fun printLayerData(neurons: Neurons, name: String) {
+fun printLayerData(neurons: Layer, name: String) {
     val propertyNames = listOf(
         "bias absolute average",
         "weights absolute average"
@@ -125,7 +133,7 @@ fun printLayerData(neurons: Neurons, name: String) {
         it.absoluteValue
     }.average()
 
-    val weightsAverage = neurons.connectionsFrom[0].weights.map {
+    val weightsAverage = neurons.backward[0].weights.map {
         it[0]
     }[0].map {
         it.absoluteValue

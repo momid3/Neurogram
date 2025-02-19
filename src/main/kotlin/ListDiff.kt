@@ -18,20 +18,40 @@ class VariableIndex(var value: Int) {
     }
 }
 
-class VariableList(name: String = "", val variableValues: DoubleArray = doubleArrayOf(), var variableIndex: VariableIndex = VariableIndex(0), isInRespectTo: Boolean = false) : Variable(name, isInRespectTo) {
+class Index(var variableIndex: VariableIndex = VariableIndex(0), val withRespectToIndex: VariableIndex = VariableIndex(- 3))
+
+class VariableList(name: String = "", val variableValues: DoubleArray = doubleArrayOf(), var index: Index = Index(), isInRespectTo: Boolean = false) : Variable(name, isInRespectTo) {
     var currentVariableIndex: Int
         get() {
-            return variableIndex.value
+            return index.variableIndex.value
         }
         set(value) {
-            variableIndex.value = value
+            index.variableIndex.value = value
+        }
+
+    var currentWithRespectToIndex: Int
+        get() {
+            return index.withRespectToIndex.value
+        }
+        set(value) {
+            index.withRespectToIndex.value = value
         }
 
     override fun derivative(): Atom {
-        if (isInRespectTo) {
-            return Constant(1.0)
-        } else {
-            return Constant(0.0)
+        return Condition(this) {
+            if (this.index.withRespectToIndex.value == - 3) {
+                if (isInRespectTo) {
+                    Constant(1.0)
+                } else {
+                    Constant(0.0)
+                }
+            } else {
+                if (isInRespectTo && this.index.variableIndex.value == this.index.withRespectToIndex.value) {
+                    Constant(1.0)
+                } else {
+                    Constant(0.0)
+                }
+            }
         }
     }
 
@@ -40,26 +60,31 @@ class VariableList(name: String = "", val variableValues: DoubleArray = doubleAr
     }
 
     override fun clone(): VariableList {
-        return VariableList(this.name, this.variableValues, this.variableIndex.clone(), this.isInRespectTo)
+        return VariableList(this.name, this.variableValues, Index(this.index.variableIndex.clone(), this.index.withRespectToIndex.clone()), this.isInRespectTo)
     }
 }
 
-class SumOf(val over: VariableList, val expression: (VariableIndex) -> Atom): Function() {
+class SumOf(val over: VariableList, val expression: (Index) -> Atom): Function() {
     override fun derivative(): Atom {
-        val variableIndex = over.variableIndex
-        return expression(variableIndex).derivative()
+        if (over.index.withRespectToIndex.value == - 3) {
+            val variableIndex = over.index
+            return expression(variableIndex).derivative()
+        } else {
+            val variableIndex = Index(over.index.withRespectToIndex, over.index.withRespectToIndex)
+            return expression(variableIndex).derivative()
+        }
     }
 
     override fun eval(): Double {
         var sum = 0.0
 
         val currentVariableIndex = over.currentVariableIndex
-        val variableIndex = over.variableIndex
+        val variableIndex = over.index
 
         val expressionValue = expression(variableIndex)
 
         for (index in over.variableValues.indices) {
-            variableIndex.value = index
+            variableIndex.variableIndex.value = index
             sum += expressionValue.eval()
         }
 
@@ -69,8 +94,8 @@ class SumOf(val over: VariableList, val expression: (VariableIndex) -> Atom): Fu
     }
 }
 
-operator fun VariableList.get(variableIndex: VariableIndex): VariableList {
+operator fun VariableList.get(index: Index): VariableList {
     val variableList = this.clone()
-    variableList.variableIndex = variableIndex
+    variableList.index = index
     return variableList
 }

@@ -5,22 +5,46 @@ import kotlin.random.Random
 
 val random = java.util.Random()
 
-fun Neurons.denseTo(neurons: Neurons, isOutput: Boolean = false): Neurons {
-    this.connectedTo.add(neurons)
+fun Layer.denseTo(neurons: Layer): Layer {
+    this.forward.add(neurons)
     this.weights.forEach {
         it.add(
-            weightInitialization(
-                this.neurons.size, neurons.neurons.size, if (!isOutput) {
-                    InitializationType.HE
-                } else {
-                    InitializationType.XAVIER
-                }
-            )
+            DoubleArray(neurons.preActivation.size)
         )
     }
-    neurons.connectionsFrom.add(this)
+    neurons.backward.add(this)
 
     return neurons
+}
+
+fun NeuralNetwork.weightInitialization() {
+    val weightsHashMap = hashMapOf<Layer, DoubleArray>()
+    val weightsIndexHashMap = hashMapOf<Layer, Int>()
+    for (layer in this.neurons) {
+        val weights = weightInitialization(
+            layer.backward.sumOf {
+                it.preActivation.size
+            }, layer.preActivation.size, if (layer.activationFunction !is Activation.Softmax) {
+                InitializationType.HE
+            } else {
+                InitializationType.XAVIER
+            }
+        )
+
+        weightsHashMap[layer] = weights
+        weightsIndexHashMap[layer] = 0
+    }
+
+    for (layer in this.neurons) {
+        for (neuronIndex in layer.preActivation.indices) {
+            for (connectionIndex in layer.weights[neuronIndex].indices) {
+                for (nextNeuronIndex in layer.weights[neuronIndex][connectionIndex].indices) {
+                    layer.weights[neuronIndex][connectionIndex][nextNeuronIndex] = weightsHashMap[layer.forward[connectionIndex]]!![weightsIndexHashMap[layer.forward[connectionIndex]]!!]
+                    weightsIndexHashMap[layer.forward[connectionIndex]] = weightsIndexHashMap[layer.forward[connectionIndex]]!! + 1
+                }
+            }
+        }
+    }
 }
 
 //fun weightInitialization(inputSize: Int, size: Int, isSoftmax: Boolean = false): DoubleArray {
@@ -53,11 +77,11 @@ fun weightInitialization(
             when (distributionType) {
                 DistributionType.UNIFORM -> {
                     val range = sqrt(6.0 / (inputSize + size))
-                    DoubleArray(size) { (Random.nextDouble() * 2 * range) - range }
+                    DoubleArray(size * inputSize) { (Random.nextDouble() * 2 * range) - range }
                 }
                 DistributionType.NORMAL -> {
                     val stdDev = sqrt(2.0 / (inputSize + size))
-                    DoubleArray(size) { random.nextGaussian() * stdDev }
+                    DoubleArray(size * inputSize) { random.nextGaussian() * stdDev }
                 }
             }
         }
@@ -65,11 +89,11 @@ fun weightInitialization(
             when (distributionType) {
                 DistributionType.UNIFORM -> {
                     val range = sqrt(6.0 / inputSize)
-                    DoubleArray(size) { (Random.nextDouble() * 2 * range) - range }
+                    DoubleArray(size * inputSize) { (Random.nextDouble() * 2 * range) - range }
                 }
                 DistributionType.NORMAL -> {
                     val stdDev = sqrt(2.0 / inputSize)
-                    DoubleArray(size) { random.nextGaussian() * stdDev }
+                    DoubleArray(size * inputSize) { random.nextGaussian() * stdDev }
                 }
             }
         }

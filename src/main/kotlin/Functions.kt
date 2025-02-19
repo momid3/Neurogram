@@ -15,7 +15,7 @@ class Condition(val atom: Atom, val param: (Atom) -> Atom) : Atom() {
     }
 }
 
-class Relu(val param: Atom) : Function() {
+class ReluFunction(val param: Atom) : Function() {
     override fun derivative(): Atom {
         return Condition(param) {
             val eval = it.eval()
@@ -171,7 +171,7 @@ fun testLogExpRelu() {
         val expDerivative = exp.withRespectTo(x).derivative()
         assertEquals(exp(a), expDerivative.eval(x to a), 1e-10, "Exp derivative failed")
 
-        val relu = Relu(x)
+        val relu = ReluFunction(x)
         assertEquals(a, relu.eval(x to a), 1e-10, "Relu failed (positive case)")
         assertEquals(0.0, relu.eval(x to -a), 1e-10, "Relu failed (negative case)")
 
@@ -192,7 +192,7 @@ fun testCombinedFunctions() {
         val combined2 = Log(Exp(x))
         assertEquals(a, combined2.eval(x to a), 1e-10, "Log(Exp(x)) failed")
 
-        val combined3 = Relu(x * y - 5.0)
+        val combined3 = ReluFunction(x * y - 5.0)
         assertEquals(1.0, combined3.eval(x to a, y to b), 1e-10, "Relu(x*y - 5) failed (positive case)")
         assertEquals(0.0, combined3.eval(x to 1.0, y to 2.0), 1e-10, "Relu(x*y - 5) failed (negative case)")
 
@@ -254,6 +254,8 @@ fun testSoftmaxAndCrossEntropy() {
 fun testSoftmaxAndCrossEntropyWithDerivatives() {
     val values = doubleArrayOf(1.0, 2.0, 3.0)
     val variableList = VariableList(variableValues = values)
+    variableList.isInRespectTo = true
+    variableList.currentWithRespectToIndex = 0
 
     val softmax = softmax(variableList)
     val softmaxDerivative = softmax.derivative()
@@ -264,27 +266,48 @@ fun testSoftmaxAndCrossEntropyWithDerivatives() {
 
     for (i in values.indices) {
         variableList.currentVariableIndex = i
-        variableList.isInRespectTo = false
         assertEquals(manualSoftmax[i], softmax.eval(), 1e-10, "Softmax failed for index $i")
     }
 
-    val softmaxDerivatives = mutableListOf<Double>()
+    val softmaxDerivatives = MutableList(values.size) {
+        MutableList(values.size) {
+            0.0
+        }
+    }
+
+    val manualJacobian = MutableList(values.size) {
+        MutableList(values.size) {
+            0.0
+        }
+    }
+
     for (i in values.indices) {
-        variableList.currentVariableIndex = i
-        variableList.isInRespectTo = true
-        softmaxDerivatives.add(softmaxDerivative.eval())
-        variableList.isInRespectTo = false
+        for (other in values.indices) {
+            variableList.currentVariableIndex = i
+            variableList.currentWithRespectToIndex = other
+            variableList.isInRespectTo = true
+            softmaxDerivatives[i][other] = softmaxDerivative.eval().also {
+                println("actual " + it)
+            }
+            variableList.isInRespectTo = false
+
+            manualJacobian[i][other] = softmaxDerivative(values, i, other).also {
+                println("expected " + it)
+            }
+        }
     }
 
     val manualJacobianDiagonal = manualSoftmax.map { it * (1 - it) }
 
     for (i in values.indices) {
-        assertEquals(
-            manualJacobianDiagonal[i],
-            softmaxDerivatives[i],
-            1e-10,
-            "Softmax derivative failed for index $i"
-        )
+        for (other in values.indices) {
+            assertEquals(
+                manualJacobian[i][other],
+                softmaxDerivatives[i][other],
+                1e-10,
+                "Softmax derivative failed for index $i $other"
+            )
+        }
     }
 
     val outputValues = doubleArrayOf(0.2, 0.3, 0.5)

@@ -1,15 +1,15 @@
 package com.momid
 
-class Neurons(
-    val neurons: DoubleArray,
-    val connectedTo: ArrayList<Neurons>,
+class Layer(
+    val postActivation: DoubleArray,
+    val forward: ArrayList<Layer>,
     val weights: ArrayList<ArrayList<DoubleArray>>,
     val biases: DoubleArray,
-    val connectionsFrom: ArrayList<Neurons>,
-    val neuronsBeforeActivation: DoubleArray,
-    val derivativesBeforeActivation: DoubleArray,
-    val derivativesAfterActivation: DoubleArray,
-    val activationFunction: ActivationFunction
+    val backward: ArrayList<Layer>,
+    val preActivation: DoubleArray,
+    val gradientsPreActivation: DoubleArray,
+    val gradientsPostActivation: DoubleArray,
+    val activationFunction: Activation
 ) {
     var weightsUpdates: List<List<List<DoubleArray>>>? = null
     var biasesUpdates: List<DoubleArray>? = null
@@ -30,10 +30,11 @@ class Neurons(
 }
 
 class NeuralNetwork(
-    val neurons: ArrayList<Neurons>,
-    val inputNeurons: Neurons,
-    val outputNeurons: Neurons,
+    val neurons: ArrayList<Layer>,
+    val inputLayer: Layer,
+    val outputLayer: Layer,
     val lossFunction: LossFunction,
+    val learningRate: Double
 ) {
     var currentLoss = 0.0
     var currentBatchIndex = 0
@@ -41,32 +42,32 @@ class NeuralNetwork(
 
 fun NeuralNetwork.forward(input: DoubleArray) {
     this.neurons.forEach { currentNeurons ->
-        for (index in currentNeurons.neurons.indices) {
-            currentNeurons.neurons[index] = 0.0
+        for (index in currentNeurons.postActivation.indices) {
+            currentNeurons.postActivation[index] = 0.0
         }
 
-        for (index in currentNeurons.neuronsBeforeActivation.indices) {
-            currentNeurons.neuronsBeforeActivation[index] = 0.0
+        for (index in currentNeurons.preActivation.indices) {
+            currentNeurons.preActivation[index] = 0.0
         }
 
-        for (index in currentNeurons.derivativesBeforeActivation.indices) {
-            currentNeurons.derivativesBeforeActivation[index] = 0.0
+        for (index in currentNeurons.gradientsPreActivation.indices) {
+            currentNeurons.gradientsPreActivation[index] = 0.0
         }
 
-        for (index in currentNeurons.derivativesBeforeActivation.indices) {
-            currentNeurons.derivativesAfterActivation[index] = 0.0
+        for (index in currentNeurons.gradientsPreActivation.indices) {
+            currentNeurons.gradientsPostActivation[index] = 0.0
         }
     }
 
-    input.copyInto(this.inputNeurons.neurons)
-    forward(arrayListOf(this.inputNeurons))
+    input.copyInto(this.inputLayer.postActivation)
+    forward(arrayListOf(this.inputLayer))
 }
 
-internal fun NeuralNetwork.forward(currentNeurons: ArrayList<Neurons>) {
-    val next = ArrayList<Neurons>()
+internal fun NeuralNetwork.forward(currentNeurons: ArrayList<Layer>) {
+    val next = ArrayList<Layer>()
 
     currentNeurons.forEach {
-        it.connectedTo.forEach {
+        it.forward.forEach {
             if (!next.contains(it)) {
                 next.add(it)
             }
@@ -74,26 +75,53 @@ internal fun NeuralNetwork.forward(currentNeurons: ArrayList<Neurons>) {
     }
 
     currentNeurons.forEach { layer ->
-        layer.connectedTo.forEachIndexed { nextLayerIndex, nextLayer ->
-            for (nextLayerNeuronsIndex in nextLayer.neuronsBeforeActivation.indices) {
+        layer.forward.forEachIndexed { nextLayerIndex, nextLayer ->
+            for (nextLayerNeuronsIndex in nextLayer.preActivation.indices) {
                 var sum = 0.0
-                for (layerNeuronIndex in layer.neuronsBeforeActivation.indices) {
-                    sum += layer.neurons[layerNeuronIndex] * layer.weights[layerNeuronIndex][nextLayerIndex][nextLayerNeuronsIndex]
+                for (layerNeuronIndex in layer.preActivation.indices) {
+                    sum += layer.postActivation[layerNeuronIndex] * layer.weights[layerNeuronIndex][nextLayerIndex][nextLayerNeuronsIndex]
                 }
-                nextLayer.neuronsBeforeActivation[nextLayerNeuronsIndex] += sum
+                nextLayer.preActivation[nextLayerNeuronsIndex] += sum
             }
         }
     }
 
     next.forEach { nextLayer ->
-        val neuronsBeforeActivationVariableList = VariableList(variableValues = nextLayer.neuronsBeforeActivation)
-        neuronsBeforeActivationVariableList.isInRespectTo = true
-        val activation = nextLayer.activationFunction.function(neuronsBeforeActivationVariableList)
-        for (nextLayerNeuronsIndex in nextLayer.neuronsBeforeActivation.indices) {
-            nextLayer.neuronsBeforeActivation[nextLayerNeuronsIndex] += nextLayer.biases[nextLayerNeuronsIndex]
+        when (nextLayer.activationFunction) {
+            is ActivationFunction -> {
+                val preActivationVariableList = VariableList(variableValues = nextLayer.preActivation)
+                preActivationVariableList.isInRespectTo = true
+                val activation = nextLayer.activationFunction.function(preActivationVariableList)
+                for (nextLayerNeuronsIndex in nextLayer.preActivation.indices) {
+                    nextLayer.preActivation[nextLayerNeuronsIndex] += nextLayer.biases[nextLayerNeuronsIndex]
 
-            neuronsBeforeActivationVariableList.currentVariableIndex = nextLayerNeuronsIndex
-            nextLayer.neurons[nextLayerNeuronsIndex] = activation.eval()
+                    preActivationVariableList.currentVariableIndex = nextLayerNeuronsIndex
+                    nextLayer.postActivation[nextLayerNeuronsIndex] = activation.eval()
+                }
+            }
+
+            is Activation.Relu -> {
+                for (nextLayerNeuronsIndex in nextLayer.preActivation.indices) {
+                    nextLayer.preActivation[nextLayerNeuronsIndex] += nextLayer.biases[nextLayerNeuronsIndex]
+
+                    nextLayer.postActivation[nextLayerNeuronsIndex] =
+                        relu(nextLayer.preActivation[nextLayerNeuronsIndex])
+                }
+            }
+
+            is Activation.Softmax -> {
+                val softmax = softmax(nextLayer.preActivation)
+                for (nextLayerNeuronsIndex in nextLayer.preActivation.indices) {
+                    nextLayer.preActivation[nextLayerNeuronsIndex] += nextLayer.biases[nextLayerNeuronsIndex]
+
+                    nextLayer.postActivation[nextLayerNeuronsIndex] =
+                        softmax[nextLayerNeuronsIndex]
+                }
+            }
+
+            else -> {
+
+            }
         }
     }
 
@@ -102,12 +130,12 @@ internal fun NeuralNetwork.forward(currentNeurons: ArrayList<Neurons>) {
     }
 }
 
-fun layer(numberOfNeurons: Int, activationFunction: ActivationFunction): Neurons {
+fun layer(numberOfNeurons: Int, activationFunction: Activation): Layer {
     val weights = ArrayList<ArrayList<DoubleArray>>()
     for (index in 0 until numberOfNeurons) {
         weights.add(ArrayList())
     }
-    return Neurons(
+    return Layer(
         DoubleArray(numberOfNeurons),
         arrayListOf(),
         weights,
@@ -122,6 +150,28 @@ fun layer(numberOfNeurons: Int, activationFunction: ActivationFunction): Neurons
     )
 }
 
+sealed class Activation {
+    data object Relu: Activation()
+    data object Sigmoid: Activation()
+    data object Softmax: Activation()
+}
+
 class LossFunction(val function: (output: VariableList, predictedOutput: VariableList) -> Function)
 
-class ActivationFunction(val function: (output: VariableList) -> Function)
+class ActivationFunction(val function: (output: VariableList) -> Function): Activation()
+
+fun relu(value: Double): Double {
+    if (value < 0.0) {
+        return 0.0
+    } else {
+        return value
+    }
+}
+
+fun reluDerivative(value: Double): Double {
+    if (value >= 0.0) {
+        return 1.0
+    } else {
+        return 0.0
+    }
+}

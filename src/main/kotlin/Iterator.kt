@@ -16,7 +16,7 @@ class Iterator(
 )
 
 fun Iterator.forward() {
-    if (this.currentDataIndex + this.batchSize < this.datasetSize) {
+    if (this.currentDataIndex + this.batchSize <= this.datasetSize) {
         for (index in 0 until this.batchSize) {
             this.currentBatchIndex = index
             this.neuralNetwork.currentBatchIndex = this.currentBatchIndex
@@ -28,17 +28,17 @@ fun Iterator.forward() {
 }
 
 fun Iterator.backPropagate() {
-    this.neuralNetwork.neurons.forEach { neurons ->
-        for (neuronsIndex in neurons.weights.indices) {
-            for (connectionIndex in neurons.weights[neuronsIndex].indices) {
-                for (nextNeuronsIndex in neurons.weights[neuronsIndex][connectionIndex].indices) {
-                    neurons.weights[neuronsIndex][connectionIndex][nextNeuronsIndex] += neurons.weightsUpdates!!.map {
+    this.neuralNetwork.neurons.forEach { layer ->
+        for (neuronsIndex in layer.weights.indices) {
+            for (connectionIndex in layer.weights[neuronsIndex].indices) {
+                for (nextNeuronsIndex in layer.weights[neuronsIndex][connectionIndex].indices) {
+                    layer.weights[neuronsIndex][connectionIndex][nextNeuronsIndex] += layer.weightsUpdates!!.map {
                         it[neuronsIndex][connectionIndex][nextNeuronsIndex]
                     }.average()
                 }
             }
 
-            neurons.biases[neuronsIndex] += neurons.biasesUpdates!!.map {
+            layer.biases[neuronsIndex] += layer.biasesUpdates!!.map {
                 it[neuronsIndex]
             }.average()
         }
@@ -52,11 +52,12 @@ fun NeuralNetwork.iterate(dataset: Dataset, batchSize: Int, epochs: Int, block: 
 
     val iterator = Iterator(this, dataset, batchSize, epochs, dataset.inputs.size, 0, 0, 0)
 
+    var iterationIndex = 0
+
     repeat(epochs) {
         iterator.currentDataIndex = 0
         iterator.currentBatchIndex = 0
-        var iterationIndex = 0
-        while (iterator.currentDataIndex + iterator.batchSize < iterator.datasetSize) {
+        while (iterator.currentDataIndex + iterator.batchSize <= iterator.datasetSize) {
             iterator.block(iterationIndex)
             iterationIndex += 1
         }
